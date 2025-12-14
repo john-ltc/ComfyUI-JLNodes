@@ -21,6 +21,10 @@ Small utility nodes designed to simplify common workflows.
 - **latent_save_output_node**  
   Saves latents to disk while also passing them through as output.
 
+- **latent_load_node**  
+  Loads latent tensors directly from ComfyUI’s output directory.
+  This node uses code copied from DJZ-Nodes. All credit belongs to DJZ-Nodes.
+
 - **save_conditioning_json**  
   Saves prompt conditioning data to a JSON file.
 
