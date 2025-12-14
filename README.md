@@ -31,4 +31,4 @@ Small utility nodes designed to simplify common workflows.
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/your-username/ComfyUI-JLNodes.git
+git clone https://github.com/john-ltc/ComfyUI-JLNodes.git
