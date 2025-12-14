@@ -1,6 +1,5 @@
 import os
 import hashlib
-import safetensors.torch
 import folder_paths
 import torch
 from typing import List
@@ -29,16 +28,13 @@ class LoadLatent:
     def INPUT_TYPES(cls):
         output_dir = folder_paths.get_output_directory()
 
-        # Re-scan only if output dir changed or cache empty
         if cls._cached_output_dir != output_dir or not cls._cached_latents:
             cls._cached_latents = cls._scan_latents(output_dir)
             cls._cached_output_dir = output_dir
 
-        latents = cls._cached_latents or [""]
-
         return {
             "required": {
-                "latent_file": (latents,),
+                "latent_file": (cls._cached_latents or [""],),
             }
         }
 
@@ -56,22 +52,34 @@ class LoadLatent:
             raise FileNotFoundError(f"Latent file not found: {latent_file}")
 
         try:
-            data = safetensors.torch.load_file(latent_path, device="cpu")
+            data = torch.load(latent_path, map_location="cpu")
 
-            if "latent_tensor" not in data:
-                raise KeyError("Missing 'latent_tensor' in latent file")
+            # -------- Normalize formats --------
+            if isinstance(data, torch.Tensor):
+                latent_tensor = data
 
-            latent_tensor = data["latent_tensor"].float()
+            elif isinstance(data, dict):
+                if "samples" in data:
+                    latent_tensor = data["samples"]
+                elif "latent_tensor" in data:
+                    latent_tensor = data["latent_tensor"]
+                else:
+                    raise KeyError("No latent tensor found in file")
 
-            multiplier = cls._detect_multiplier(data)
-            samples = {"samples": latent_tensor * multiplier}
+            else:
+                raise TypeError(f"Unsupported latent format: {type(data)}")
+
+            latent_tensor = latent_tensor.float()
+
+            samples = {
+                "samples": latent_tensor * (1.0 / SD_VAE_SCALE)
+            }
 
             return (samples,)
 
         except Exception as e:
             print(f"[LoadLatent] Failed to load '{latent_file}': {e}")
 
-            # Safe fallback to avoid graph crash
             return ({
                 "samples": torch.zeros(DEFAULT_LATENT_SHAPE, dtype=torch.float32)
             },)
@@ -88,23 +96,9 @@ class LoadLatent:
                 if f.endswith(LATENT_EXT):
                     full_path = os.path.join(root, f)
                     rel_path = os.path.relpath(full_path, base_dir)
-
-                    # Normalize for ComfyUI dropdowns
                     results.append(rel_path.replace("\\", "/"))
 
         return sorted(results)
-
-    @staticmethod
-    def _detect_multiplier(data: dict) -> float:
-        """
-        Detect latent scale based on metadata.
-        """
-        # Future-proof: explicit version tags
-        if "latent_format_version_0" in data:
-            return 1.0
-
-        # Default SD / SDXL VAE scaling
-        return 1.0 / SD_VAE_SCALE
 
     # -------------------------
     # ComfyUI lifecycle hooks
@@ -114,8 +108,9 @@ class LoadLatent:
         if not latent_file:
             return "NO_FILE_SELECTED"
 
-        output_dir = folder_paths.get_output_directory()
-        latent_path = os.path.join(output_dir, latent_file)
+        latent_path = os.path.join(
+            folder_paths.get_output_directory(), latent_file
+        )
 
         if not os.path.isfile(latent_path):
             return "FILE_MISSING"
@@ -134,8 +129,9 @@ class LoadLatent:
         if not latent_file:
             return "No latent file selected"
 
-        output_dir = folder_paths.get_output_directory()
-        latent_path = os.path.join(output_dir, latent_file)
+        latent_path = os.path.join(
+            folder_paths.get_output_directory(), latent_file
+        )
 
         if not os.path.exists(latent_path):
             return f"Latent file not found: {latent_file}"
